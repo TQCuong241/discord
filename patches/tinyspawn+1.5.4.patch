@@ -1,0 +1,23 @@
+diff --git a/node_modules/tinyspawn/src/index.js b/node_modules/tinyspawn/src/index.js
+index b7a50a5..8d8f79c 100644
+--- a/node_modules/tinyspawn/src/index.js
++++ b/node_modules/tinyspawn/src/index.js
+@@ -59,6 +59,18 @@ const extend = defaults => (input, args, options) => {
+       })
+       Object.defineProperty(childProcess, 'stderr', { get: parse(stderr) })
+       if (exitCode !== 0) {
++        const stderrText = Buffer.concat(stderr).toString()
++        const isBrokenPipe = stderrText.includes('Broken pipe') || 
++                             stderrText.includes('[Errno 32]') ||
++                             (stderrText.includes('ERROR') && stderrText.includes('unable to write data'))
++        const isOnlyBrokenPipe = isBrokenPipe && 
++          (!stderrText.replace(/ERROR: unable to write data: \[Errno 32\] Broken pipe/g, '').replace(/WARNING:.*?JavaScript runtime.*?\n/g, '').trim() || 
++           stderrText.replace(/ERROR: unable to write data: \[Errno 32\] Broken pipe/g, '').replace(/WARNING:.*?JavaScript runtime.*?\n/g, '').trim() === '')
++        
++        if (isOnlyBrokenPipe) {
++          return resolve(childProcess)
++        }
++        
+         const error = createChildProcessError({ cmd, cmdArgs, childProcess })
+         if (opts.reject !== false) return reject(error)
+         childProcess.error = error

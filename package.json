@@ -8,9 +8,19 @@
     "dev": "ts-node src/index.ts",
     "build": "tsc",
     "register": "ts-node src/registerCommands.ts",
-    "test": "ts-node src/apiTTV/index.ts"
+    "test": "ts-node src/apiTTV/index.ts",
+    "postinstall": "patch-package"
   },
-  "keywords": ["discord", "bot", "typescript", "music", "ai", "chatgpt", "valorant", "nph"],
+  "keywords": [
+    "discord",
+    "bot",
+    "typescript",
+    "music",
+    "ai",
+    "chatgpt",
+    "valorant",
+    "nph"
+  ],
   "author": "N P H",
   "license": "ISC",
   "repository": {
@@ -51,6 +61,8 @@
     "@types/node": "^24.10.0",
     "@types/node-fetch": "^2.6.13",
     "@types/puppeteer": "^5.4.7",
+    "patch-package": "^8.0.1",
+    "postinstall-postinstall": "^2.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

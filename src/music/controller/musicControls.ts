@@ -16,15 +16,16 @@ export function createMusicControls(isPaused = false, guildId?: string) {
       .setStyle(isPaused ? ButtonStyle.Success : ButtonStyle.Secondary)
   );
 
-  if (hasNext) {
-    controlRow.addComponents(
-      new ButtonBuilder()
-        .setCustomId("skip")
-        .setEmoji("⏭️")
-        .setLabel("Bỏ qua")
-        .setStyle(ButtonStyle.Primary)
-    );
-  }
+  // Tạm thời tắt nút skip
+  // if (hasNext) {
+  //   controlRow.addComponents(
+  //     new ButtonBuilder()
+  //       .setCustomId("skip")
+  //       .setEmoji("⏭️")
+  //       .setLabel("Bỏ qua")
+  //       .setStyle(ButtonStyle.Primary)
+  //   );
+  // }
 
   controlRow.addComponents(
     new ButtonBuilder()

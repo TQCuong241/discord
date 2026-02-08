@@ -41,6 +41,11 @@ async function safeReply(
 
 export default async function skipMusic(ctx: Message | ChatInputCommandInteraction) {
   try {
+    await safeReply(ctx, "⚠️ **Chức năng skip đang tạm thời bị tắt.**");
+    return;
+    
+    // Tạm thời tắt chức năng skip
+    /*
     const guildId = ctx.guild?.id || "unknown";
     const queue = QueueManager.getQueue(guildId);
 
@@ -96,6 +101,7 @@ export default async function skipMusic(ctx: Message | ChatInputCommandInteracti
     if (ctx instanceof Message) {
       setTimeout(() => ctx.delete().catch(() => {}), 20_000);
     }
+    */
   } catch (err) {
     console.error(colorLog("[Music] Lỗi khi bỏ qua bài hát:", "red"), err);
     await safeReply(ctx, "Đã xảy ra lỗi khi bỏ qua bài hát.");

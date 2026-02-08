@@ -2,10 +2,8 @@ import { Message, TextChannel } from "discord.js";
 import { AudioPlayer, VoiceConnection } from "@discordjs/voice";
 import { createMusicControls } from "./musicControls";
 import { QueueManager } from "../queue";
+import { colorLog } from "../../utils";
 
-/**
- * Collector xử lý khi người dùng bấm nút điều khiển
- */
 export function setupMusicCollector(
   msg: Message,
   player: AudioPlayer,
@@ -13,7 +11,6 @@ export function setupMusicCollector(
   guildId: string,
   channel: TextChannel
 ) {
-  //  Hết hạn collector sau 100 phút
   const collector = msg.createMessageComponentCollector({
     time: 10 * 60 * 10000,
   });
@@ -21,15 +18,22 @@ export function setupMusicCollector(
   collector.on("collect", async (i) => {
     if (!i.isButton()) return;
 
-    // 🔹 Lấy queue theo guild
     const queue = QueueManager.getQueue(guildId);
+    const allConnections = QueueManager.getAllConnections(guildId);
 
     try {
       switch (i.customId) {
-        // Tạm dừng
         case "pause":
           if (player.state.status !== "paused") {
-            player.pause(true);
+            for (const vcConn of allConnections) {
+              try {
+                if (vcConn.player.state.status !== "paused") {
+                  vcConn.player.pause(true);
+                }
+              } catch (err) {
+                console.error(colorLog(`[Music] Lỗi khi pause player cho channel ${vcConn.channelId}:`, "red"), err);
+              }
+            }
             const pauseControls = createMusicControls(true, guildId);
             await i.update({
               components: pauseControls,
@@ -37,10 +41,17 @@ export function setupMusicCollector(
           }
           break;
 
-        // Tiếp tục
         case "resume":
           if (player.state.status === "paused") {
-            player.unpause();
+            for (const vcConn of allConnections) {
+              try {
+                if (vcConn.player.state.status === "paused") {
+                  vcConn.player.unpause();
+                }
+              } catch (err) {
+                console.error(colorLog(`[Music] Lỗi khi resume player cho channel ${vcConn.channelId}:`, "red"), err);
+              }
+            }
             const resumeControls = createMusicControls(false, guildId);
             await i.update({
               components: resumeControls,
@@ -48,33 +59,66 @@ export function setupMusicCollector(
           }
           break;
 
-        // Bỏ qua
         case "skip":
           await i.reply({
-            content: "**Đang chuyển bài...**",
+            content: "⚠️ **Chức năng skip đang tạm thời bị tắt.**",
             ephemeral: true,
           });
-
-          player.stop(true);
-
-          setTimeout(async () => {
-            try {
-              await msg.delete();
-            } catch {}
-          }, 5000);
-
-          setTimeout(async () => {
-            try {
-              await i.deleteReply();
-            } catch {}
-          }, 10_000);
           break;
+          
+          // Tạm thời tắt chức năng skip
+          // const nextSong = queue.songs.length > 0 ? queue.songs[0] : null;
+          // const currentTitle = queue.currentTitle || "Bài hát hiện tại";
 
-        // Dừng
+          // let skipMessage = `⏭️ **Đang bỏ qua:** ${currentTitle}`;
+          // if (nextSong) {
+          //   skipMessage += `\n🎵 **Bài tiếp theo:** ${nextSong.title}`;
+          // } else {
+          //   skipMessage += `\n📭 **Không còn bài nào trong hàng đợi.**`;
+          // }
+
+          // await i.reply({
+          //   content: skipMessage,
+          //   ephemeral: true,
+          // });
+
+          // for (const vcConn of allConnections) {
+          //   try {
+          //     vcConn.player.stop(true);
+          //   } catch (err) {
+          //     console.error(colorLog(`[Music] Lỗi khi stop player cho channel ${vcConn.channelId}:`, "red"), err);
+          //   }
+          // }
+
+          // setTimeout(async () => {
+          //   try {
+          //     const { updateMusicControls } = await import("./index");
+          //     await updateMusicControls(guildId);
+          //   } catch (err) {
+          //     console.error(colorLog("[Music] Lỗi khi cập nhật control:", "red"), err);
+          //   }
+          // }, 1000);
+
+          // setTimeout(async () => {
+          //   try {
+          //     await i.deleteReply();
+          //   } catch {}
+          // }, 8_000);
+          // break;
+
         case "stop":
-          if (player.state.status !== "idle") player.stop();
-          if (connection) connection.destroy();
-
+          for (const vcConn of allConnections) {
+            try {
+              if (vcConn.player.state.status !== "idle") {
+                vcConn.player.stop();
+              }
+              vcConn.connection.destroy();
+            } catch (err) {
+              console.error(`[Music] Lỗi khi stop/destroy cho channel ${vcConn.channelId}:`, err);
+            }
+          }
+          
+          queue.connections.clear();
           QueueManager.setPlaying(guildId, false);
 
           await i.update({
@@ -85,7 +129,6 @@ export function setupMusicCollector(
           collector.stop();
           break;
 
-        // Danh sách bài hát
         case "list":
           const list = queue.songs;
           if (!list || list.length === 0) {
@@ -108,10 +151,9 @@ export function setupMusicCollector(
               content: ` **Hàng chờ (${list.length} bài):**\n${display}${
                 list.length > 10 ? "\n...và nhiều hơn nữa." : ""
               }`,
-              ephemeral: true, // chỉ người bấm thấy
+              ephemeral: true,
             });
 
-            //  Tự động xóa phản hồi sau 1 phút
             setTimeout(async () => {
               try {
                 await i.deleteReply();
@@ -120,7 +162,6 @@ export function setupMusicCollector(
           }
           break;
 
-        // Xóa bài hát
         case "delete":
           await i.reply({
             content:
@@ -128,7 +169,6 @@ export function setupMusicCollector(
               "Ví dụ: `!deleteMusic 1,3` để xóa bài số 1 và 3.",
             ephemeral: true,
           });
-                      //  Tự động xóa phản hồi sau 1 phút
         setTimeout(async () => {
             try {
             await i.deleteReply();
@@ -139,11 +179,10 @@ export function setupMusicCollector(
         
       }
     } catch (err) {
-      console.error(" Lỗi khi xử lý nút:", err);
+      console.error(colorLog("[Music] Lỗi khi xử lý nút:", "red"), err);
     }
   });
 
-  // ⌛ Khi collector hết hạn
   collector.on("end", async () => {
     try {
       await msg.edit({
