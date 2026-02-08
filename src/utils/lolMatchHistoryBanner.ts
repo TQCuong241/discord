@@ -1,26 +1,23 @@
 import { createCanvas, loadImage } from "canvas";
 
-export async function createMatchHistoryBanner(matches: {
-  agent: string;
-  agentIcon: string;
-  map: string;
+export async function createLoLMatchHistoryBanner(matches: {
+  champion: string;
+  championIcon: string;
+  result: string;
   kills: number;
   deaths: number;
   assists: number;
-  kd: string;
-  hs?: string;
-  result: string;
-  roundsWon?: number;
-  roundsLost?: number;
+  kda: string;
+  duration: string;
 }[]): Promise<Buffer> {
   const validMatches = matches.filter(Boolean);
   const count = Math.min(validMatches.length, 10);
 
   const scale = 2;
-  const width = 1200; // Tăng từ 880 lên 1200
-  const rowHeight = 75; // Tăng từ 65 lên 75
-  const headerHeight = 50; // Tăng từ 45 lên 50
-  const padding = 20; // Tăng từ 15 lên 20
+  const width = 1200;
+  const rowHeight = 75;
+  const headerHeight = 50;
+  const padding = 20;
 
   const canvas = createCanvas(width * scale, (headerHeight + rowHeight * count + padding * 2) * scale);
   const ctx = canvas.getContext("2d");
@@ -36,13 +33,12 @@ export async function createMatchHistoryBanner(matches: {
   ctx.fillRect(0, 0, width, headerHeight);
 
   ctx.fillStyle = "#00ffff";
-  ctx.font = "bold 24px Arial"; // Tăng font size
-  ctx.fillText("🗺️ Map", 100, headerHeight / 2);
+  ctx.font = "bold 24px Arial";
+  ctx.fillText("👤 Champion", 100, headerHeight / 2);
   ctx.fillText("🎯 K/D/A", 320, headerHeight / 2);
-  ctx.fillText("⚔️ KD", 500, headerHeight / 2);
-  ctx.fillText("HS%", 620, headerHeight / 2);
-  ctx.fillText("🏆 Round", 750, headerHeight / 2);
-  ctx.fillText("🏁 Result", 900, headerHeight / 2);
+  ctx.fillText("⚔️ KDA", 500, headerHeight / 2);
+  ctx.fillText("⏱️ Duration", 650, headerHeight / 2);
+  ctx.fillText("🏁 Result", 850, headerHeight / 2);
 
   // === DỮ LIỆU TỪNG TRẬN ===
   ctx.imageSmoothingEnabled = true;
@@ -59,13 +55,13 @@ export async function createMatchHistoryBanner(matches: {
 
     // khung nền avatar
     ctx.fillStyle = "rgba(255,255,255,0.06)";
-    ctx.fillRect(15, y + 8, 60, 60); // Tăng kích thước
+    ctx.fillRect(15, y + 8, 60, 60);
 
-    // ảnh agent
+    // ảnh champion
     try {
-      if (m.agentIcon && m.agentIcon.startsWith("http")) {
-        const img = await loadImage(m.agentIcon);
-        ctx.drawImage(img, 16, y + 9, 58, 58); // Tăng kích thước
+      if (m.championIcon && m.championIcon.startsWith("http")) {
+        const img = await loadImage(m.championIcon);
+        ctx.drawImage(img, 16, y + 9, 58, 58);
       } else {
         ctx.fillStyle = "#333";
         ctx.fillRect(16, y + 9, 58, 58);
@@ -75,10 +71,10 @@ export async function createMatchHistoryBanner(matches: {
       ctx.fillRect(16, y + 9, 58, 58);
     }
 
-    // Map
-    ctx.font = "20px Arial"; // Tăng font
+    // Champion name
+    ctx.font = "20px Arial";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(m.map || "-", 100, y + rowHeight / 2);
+    ctx.fillText(m.champion || "-", 100, y + rowHeight / 2);
 
     // === 🎯 K/D/A — nổi bật nhất ===
     ctx.font = "bold 26px Arial"; // Sử dụng Arial thay vì Arial Black
@@ -86,29 +82,22 @@ export async function createMatchHistoryBanner(matches: {
     ctx.shadowBlur = 8;
     ctx.fillStyle = "#ffffff";
     ctx.fillText(`${m.kills}/${m.deaths}/${m.assists}`, 320, y + rowHeight / 2);
-    ctx.shadowBlur = 0; // tắt glow sau khi vẽ xong
+    ctx.shadowBlur = 0;
 
-    // KD
-    ctx.font = "20px Arial"; // Tăng font
+    // KDA
+    ctx.font = "20px Arial";
     ctx.fillStyle = "#aaffff";
-    ctx.fillText(m.kd, 500, y + rowHeight / 2);
+    ctx.fillText(m.kda, 500, y + rowHeight / 2);
 
-    // HS%
-    ctx.fillStyle = "#ffff66";
-    ctx.font = "20px Arial"; // Tăng font
-    ctx.fillText(m.hs ?? "-", 620, y + rowHeight / 2);
-
-    // Round thắng/thua
-    const rounds = `${m.roundsWon ?? "-"}-${m.roundsLost ?? "-"}`;
+    // Duration
     ctx.fillStyle = "#99ddff";
-    ctx.font = "20px Arial"; // Tăng font
-    ctx.fillText(rounds, 750, y + rowHeight / 2);
+    ctx.fillText(m.duration || "-", 650, y + rowHeight / 2);
 
     // Kết quả
     const resultColor = m.result === "victory" ? "#00ff88" : "#ff4c4c";
     ctx.fillStyle = resultColor;
-    ctx.font = "bold 22px Arial"; // Tăng font
-    ctx.fillText(m.result === "victory" ? "🟢 Win" : "🔴 Lose", 900, y + rowHeight / 2);
+    ctx.font = "bold 22px Arial";
+    ctx.fillText(m.result === "victory" ? "🟢 Win" : "🔴 Lose", 850, y + rowHeight / 2);
   }
 
   // === KHUNG NGOÀI ===
@@ -118,3 +107,4 @@ export async function createMatchHistoryBanner(matches: {
 
   return canvas.toBuffer("image/png");
 }
+

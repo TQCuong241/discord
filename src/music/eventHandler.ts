@@ -5,13 +5,13 @@ import {
   VoiceConnectionStatus,
 } from "@discordjs/voice";
 import { GuildMember, TextChannel, VoiceChannel } from "discord.js";
-import { ICON } from "../utils/icons";
+import { ICON, colorLog } from "../utils";
 import { QueueManager } from "./queue";
 import { playMusic } from "./player";
+import { VoiceChannelConnection } from "./queue/queueTypes";
 
-/**
- * Khi bài hát kết thúc
- */
+const registeredIdleHandlers = new WeakSet<AudioPlayer>();
+
 export function handleIdleEvent(
   player: AudioPlayer,
   connection: VoiceConnection,
@@ -19,14 +19,60 @@ export function handleIdleEvent(
   replyTarget: any,
   member: GuildMember
 ) {
+  if (registeredIdleHandlers.has(player)) {
+    return;
+  }
+  
+  registeredIdleHandlers.add(player);
+  
   player.on(AudioPlayerStatus.Idle, async () => {
-    const next = QueueManager.getNextSong(guildId);
-    if (next) {
-      console.log(`${ICON.play} Chuyển sang bài kế: ${next.title}`);
-      await playMusic(next.member, next.url, next.title, replyTarget, true);
-      QueueManager.getQueue(guildId).currentTitle = next.title;
-    } else {
-      console.log(`${ICON.success} Hết hàng đợi, rời kênh.`);
+    try {
+      const next = QueueManager.getNextSong(guildId);
+      if (next) {
+        console.log(colorLog(`[Music] Chuyển sang bài kế: ${next.title}`, "cyan"));
+        
+        let validMember = next.member;
+        
+        if (!validMember || !validMember.voice?.channel) {
+          const allConnections = QueueManager.getAllConnections(guildId);
+          let guild = member?.guild || replyTarget?.guild;
+          
+          if (!guild && replyTarget?.channel) {
+            guild = replyTarget.channel.guild;
+          }
+          
+          if (guild) {
+            for (const vcConn of allConnections) {
+              try {
+                const channel = guild.channels.cache.get(vcConn.channelId) as VoiceChannel;
+                if (channel) {
+                  const membersInChannel = channel.members.filter(m => !m.user.bot);
+                  if (membersInChannel.size > 0) {
+                    validMember = membersInChannel.first()!;
+                    break;
+                  }
+                }
+              } catch (err) {
+                console.error(colorLog(`[Music] Lỗi khi tìm member hợp lệ từ channel ${vcConn.channelId}:`, "red"), err);
+              }
+            }
+          }
+        }
+        
+        if (!validMember || !validMember.voice?.channel) {
+          console.error(colorLog(`[Music] Không tìm thấy member hợp lệ để phát bài tiếp theo`, "red"));
+          QueueManager.setPlaying(guildId, false);
+          return;
+        }
+        
+        const result = await playMusic(validMember, next.url, next.title, replyTarget, true);
+        if (result) {
+          QueueManager.getQueue(guildId).currentTitle = next.title;
+        } else {
+          console.error(colorLog(`[Music] Không thể phát bài tiếp theo`, "red"));
+        }
+      } else {
+      console.log(colorLog(`[Music] Hết hàng đợi, rời kênh.`, "green"));
       QueueManager.setPlaying(guildId, false);
 
       try {
@@ -42,7 +88,6 @@ export function handleIdleEvent(
         }
       } catch {}
 
-      //  Xóa message điều khiển
       const controlMsg = QueueManager.getControlMessage(guildId);
       if (controlMsg) {
         try {
@@ -56,49 +101,63 @@ export function handleIdleEvent(
         } catch {}
       }
 
-      connection.destroy();
+      const allConnections = QueueManager.getAllConnections(guildId);
+      for (const vcConn of allConnections) {
+        try {
+          vcConn.connection.destroy();
+        } catch (err) {
+          console.error(colorLog(`[Music] Lỗi khi destroy connection ${vcConn.channelId}:`, "red"), err);
+        }
+      }
+      QueueManager.getQueue(guildId).connections.clear();
+      }
+    } catch (err) {
+      console.error(colorLog("[Music] Lỗi khi xử lý idle event:", "red"), err);
+      QueueManager.setPlaying(guildId, false);
     }
   });
 }
 
-/**
- *  Khi bot bị ngắt kết nối hoặc kick khỏi voice
- */
 export function handleConnectionEvents(
   connection: VoiceConnection,
   player: AudioPlayer,
   guildId: string
 ) {
   connection.on(VoiceConnectionStatus.Disconnected, async () => {
-    console.warn(`${ICON.warn} Bot bị ngắt kết nối hoặc bị kick khỏi kênh.`);
+    console.warn(colorLog(`[Music] Bot bị ngắt kết nối hoặc bị kick khỏi kênh.`, "yellow"));
     try {
       player.stop();
-      QueueManager.setPlaying(guildId, false);
-
-      //  Xóa message điều khiển
-      const controlMsg = QueueManager.getControlMessage(guildId);
-      if (controlMsg) {
-        try {
-          await controlMsg.edit({
-            content: " **Bot đã bị ngắt kết nối khỏi kênh.**",
-            components: [],
-          });
-          setTimeout(async () => {
-            await controlMsg.delete().catch(() => {});
-          }, 10_000);
-        } catch {}
+      
+      const allConnections = QueueManager.getAllConnections(guildId);
+      const channelId = allConnections.find((vc: VoiceChannelConnection) => vc.connection === connection)?.channelId;
+      if (channelId) {
+        QueueManager.removeConnection(guildId, channelId);
+      }
+      
+      if (QueueManager.getAllConnections(guildId).length === 0) {
+        QueueManager.setPlaying(guildId, false);
+        
+        const controlMsg = QueueManager.getControlMessage(guildId);
+        if (controlMsg) {
+          try {
+            await controlMsg.edit({
+              content: " **Bot đã bị ngắt kết nối khỏi tất cả kênh.**",
+              components: [],
+            });
+            setTimeout(async () => {
+              await controlMsg.delete().catch(() => {});
+            }, 10_000);
+          } catch {}
+        }
       }
 
       connection.destroy();
     } catch (err) {
-      console.error(" Lỗi khi xử lý disconnect:", err);
+      console.error(colorLog("[Music] Lỗi khi xử lý disconnect:", "red"), err);
     }
   });
 }
 
-/**
- * Theo dõi khi voice channel trống → bot rời kênh
- */
 export function monitorChannelEmpty(
   member: GuildMember,
   player: AudioPlayer,
@@ -110,12 +169,11 @@ export function monitorChannelEmpty(
     try {
       const currentChannel = member.guild.members.me?.voice?.channel as VoiceChannel;
       if (!currentChannel) {
-        console.log(`${ICON.warn} Bot bị kick khỏi voice channel, dừng phát.`);
+        console.log(colorLog(`[Music] Bot bị kick khỏi voice channel, dừng phát.`, "yellow"));
         player.stop();
         QueueManager.setPlaying(guildId, false);
         clearInterval(checkEmptyInterval);
 
-        //  Xóa message điều khiển
         const controlMsg = QueueManager.getControlMessage(guildId);
         if (controlMsg) {
           try {
@@ -135,7 +193,7 @@ export function monitorChannelEmpty(
 
       const listeners = currentChannel.members.filter((m) => !m.user.bot);
       if (listeners.size === 0) {
-        console.log(`${ICON.warn} Voice channel trống, dừng phát và rời phòng.`);
+        console.log(colorLog(`[Music] Voice channel trống, dừng phát và rời phòng.`, "yellow"));
         player.stop();
         QueueManager.setPlaying(guildId, false);
         clearInterval(checkEmptyInterval);
@@ -146,7 +204,6 @@ export function monitorChannelEmpty(
             await textChannel.send(`${ICON.info} **Không còn ai trong kênh, bot rời phòng.**`);
         } catch {}
 
-        //  Xóa message điều khiển
         const controlMsg = QueueManager.getControlMessage(guildId);
         if (controlMsg) {
           try {
@@ -162,8 +219,6 @@ export function monitorChannelEmpty(
 
         connection.destroy();
       }
-    } catch (err) {
-    //   console.error(" Lỗi khi kiểm tra voice channel:", err);
-    }
+    } catch (err) {}
   }, 5000);
 }

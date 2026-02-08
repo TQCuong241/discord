@@ -20,7 +20,7 @@ export async function createAgentBanner(agentIcons: (string | undefined)[]): Pro
       const x = i * (size + spacing);
       ctx.drawImage(img, x, 0, size, size);
     } catch (err) {
-      console.warn(`⚠️ Không tải được ảnh agent: ${icons[i]}`);
+      console.warn(`Không tải được ảnh agent: ${icons[i]}`);
     }
   }
 

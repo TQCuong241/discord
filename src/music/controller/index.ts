@@ -1,6 +1,3 @@
-// ===============================
-// ===============================
-
 export { createMusicControls } from "./musicControls";
 export { setupMusicCollector } from "./musicCollector";
 
@@ -9,30 +6,25 @@ import { AudioPlayer, VoiceConnection } from "@discordjs/voice";
 import { QueueManager } from "../queue";
 import { createMusicControls } from "./musicControls";
 import { setupMusicCollector } from "./musicCollector";
+import { colorLog } from "../../utils";
 
-/** Màu ngẫu nhiên cho viền embed */
 const EMBED_COLORS: ColorResolvable[] = [
   0x1abc9c, 0xe67e22, 0xe74c3c, 0x9b59b6, 0x3498db, 0x2ecc71, 0xf1c40f,
 ];
 
-/** Mã màu ANSI cho chữ */
 const ANSI_COLORS: string[] = [
-  "\u001b[1;31m", // đỏ
-  "\u001b[1;32m", // xanh lá
-  "\u001b[1;33m", // vàng
-  "\u001b[1;34m", // xanh dương
-  "\u001b[1;35m", // tím
-  "\u001b[1;36m", // cyan sáng
+  "\u001b[1;31m",
+  "\u001b[1;32m",
+  "\u001b[1;33m",
+  "\u001b[1;34m",
+  "\u001b[1;35m",
+  "\u001b[1;36m",
 ];
 
-/** Text random */
 const TITLES = ["Đang phát", "Now Playing", "Giai điệu đang vang lên"];
 const UNKNOWN_SONGS = ["(Không rõ tên bài hát)", "(Bài hát bí ẩn)", "(Chưa xác định)"];
 const NEXT_LABELS = ["Bài tiếp theo", "Trong hàng chờ", "Hàng đợi phát nhạc"];
 
-/**
- *  Gửi message điều khiển nhạc mới
- */
 export async function createNewMusicMessage(
   channel: TextChannel,
   player: AudioPlayer,
@@ -74,23 +66,19 @@ ${ansiTitle}${safeSong}\u001b[0m
       .addFields(field)
       .setFooter({ text: "🎧 Bot Cường — Music System" });
 
+    const controls = createMusicControls(false, guildId);
     const newMsg = await channel.send({
       embeds: [embed],
-      components: [createMusicControls(false, guildId)],
+      components: controls,
     });
 
     QueueManager.setControlMessage(guildId, newMsg);
     queue.message = newMsg;
     setupMusicCollector(newMsg, player, connection, guildId, channel);
     return newMsg;
-  } catch (err) {
-    // console.error(" Lỗi khi tạo message mới:", err);
-  }
+  } catch (err) {}
 }
 
-/**
- *  Cập nhật giao diện điều khiển khi thêm bài hát mới
- */
 export async function updateMusicControls(guildId: string) {
   try {
     const msg = QueueManager.getControlMessage(guildId);
@@ -127,11 +115,12 @@ ${ansiTitle}${safeSong}\u001b[0m
       .addFields(field)
       .setFooter({ text: "🎧 Bot Cường — Music System" });
 
+    const controls = createMusicControls(false, guildId);
     await msg.edit({
       embeds: [embed],
-      components: [createMusicControls(false, guildId)],
+      components: controls,
     });
   } catch (err) {
-    console.error(" Không thể cập nhật giao diện điều khiển:", err);
+    console.error(colorLog("[Music] Không thể cập nhật giao diện điều khiển:", "red"), err);
   }
 }

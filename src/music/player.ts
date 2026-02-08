@@ -30,7 +30,7 @@ export async function playMusic(
   if (!channel) throw new Error(`${ICON.warn} Bạn cần vào voice channel trước!`);
 
   //  Kết nối voice channel
-  const { connection, player } = joinVoice(channel);
+  const { connection, player } = await joinVoice(channel);
 
   try {
     // Tạo stream resource từ yt-dlp hoặc local

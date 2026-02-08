@@ -30,8 +30,9 @@ export function setupMusicCollector(
         case "pause":
           if (player.state.status !== "paused") {
             player.pause(true);
+            const pauseControls = createMusicControls(true, guildId);
             await i.update({
-              components: [createMusicControls(true, guildId)],
+              components: pauseControls,
             });
           }
           break;
@@ -40,8 +41,9 @@ export function setupMusicCollector(
         case "resume":
           if (player.state.status === "paused") {
             player.unpause();
+            const resumeControls = createMusicControls(false, guildId);
             await i.update({
-              components: [createMusicControls(false, guildId)],
+              components: resumeControls,
             });
           }
           break;
