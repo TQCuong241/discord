@@ -65,11 +65,45 @@ export function handleIdleEvent(
           return;
         }
         
-        const result = await playMusic(validMember, next.url, next.title, replyTarget, true);
-        if (result) {
-          QueueManager.getQueue(guildId).currentTitle = next.title;
-        } else {
-          console.error(colorLog(`[Music] Không thể phát bài tiếp theo`, "red"));
+        try {
+          const result = await playMusic(validMember, next.url, next.title, replyTarget, true);
+          if (result) {
+            QueueManager.getQueue(guildId).currentTitle = next.title;
+          } else {
+            console.error(colorLog(`[Music] Không thể phát bài tiếp theo: ${next.title}`, "red"));
+            
+            try {
+              const textChannel: TextChannel = replyTarget?.channel;
+              if (textChannel) {
+                const notify = await textChannel.send(
+                  `${ICON.warn} **Không thể phát bài:** ${next.title}\n⏭️ **Đang chuyển sang bài tiếp theo...**`
+                );
+                setTimeout(() => notify.delete().catch(() => {}), 10000);
+              }
+            } catch {}
+            
+            const mainPlayer = QueueManager.getMainPlayer(guildId);
+            if (mainPlayer && mainPlayer.state.status !== "idle") {
+              mainPlayer.stop(true);
+            }
+          }
+        } catch (playErr: any) {
+          console.error(colorLog(`[Music] Lỗi khi phát bài ${next.title}:`, "red"), playErr);
+          
+          try {
+            const textChannel: TextChannel = replyTarget?.channel;
+            if (textChannel) {
+              const notify = await textChannel.send(
+                `${ICON.warn} **Không thể phát bài:** ${next.title}\n⏭️ **Đang chuyển sang bài tiếp theo...**`
+              );
+              setTimeout(() => notify.delete().catch(() => {}), 10000);
+            }
+          } catch {}
+          
+          const mainPlayer = QueueManager.getMainPlayer(guildId);
+          if (mainPlayer && mainPlayer.state.status !== "idle") {
+            mainPlayer.stop(true);
+          }
         }
       } else {
       console.log(colorLog(`[Music] Hết hàng đợi, rời kênh.`, "green"));
