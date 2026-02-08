@@ -34,6 +34,10 @@ export async function createStreamResource(url: string) {
           output: "-",
           quiet: true,
           format: "bestaudio/best",
+          noWarnings: false,
+          noCheckCertificates: true,
+          preferFreeFormats: true,
+          addHeader: ["referer:youtube.com", "user-agent:Mozilla/5.0"],
         },
         { stdio: ["ignore", "pipe", "pipe"] }
       );
@@ -44,7 +48,16 @@ export async function createStreamResource(url: string) {
       });
 
       proc.stderr?.on("data", (data: Buffer) => {
-        errorChunks.push(data);
+        const errorMsg = data.toString();
+        if (errorMsg.includes("ERROR") && !errorMsg.includes("Broken pipe")) {
+          errorChunks.push(data);
+        } else if (errorMsg.includes("Broken pipe")) {
+          if (!hasResolved) {
+            console.warn(colorLog(`[Music] yt-dlp broken pipe - có thể do process exit sớm, bỏ qua lỗi này`, "yellow"));
+          }
+        } else if (!errorMsg.includes("WARNING") && !errorMsg.includes("JavaScript runtime")) {
+          errorChunks.push(data);
+        }
       });
       
       proc.on("close", (code: number, signal: string) => {
@@ -54,12 +67,18 @@ export async function createStreamResource(url: string) {
           try {
             const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
             const cleanError = errorMsg.trim();
-            if (cleanError && !cleanError.includes("WARNING") && !cleanError.includes("ERROR")) {
+            const hasRealError = cleanError && 
+              !cleanError.includes("WARNING") && 
+              !cleanError.includes("JavaScript runtime") &&
+              !cleanError.includes("Broken pipe");
+            
+            if (hasRealError) {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}:`, "red"), cleanError);
-            } else {
+              reject(new Error(`Không thể tải video (code ${code}): ${cleanError.substring(0, 100)}`));
+            } else if (code === 1) {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}`, "red"));
+              reject(new Error(`Không thể tải video (code ${code})`));
             }
-            reject(new Error(`Không thể tải video (code ${code})`));
           } catch (rejectErr) {
             reject(new Error(`Không thể tải video (code ${code})`));
           }
@@ -73,12 +92,18 @@ export async function createStreamResource(url: string) {
           try {
             const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
             const cleanError = errorMsg.trim();
-            if (cleanError && !cleanError.includes("WARNING") && !cleanError.includes("ERROR")) {
+            const hasRealError = cleanError && 
+              !cleanError.includes("WARNING") && 
+              !cleanError.includes("JavaScript runtime") &&
+              !cleanError.includes("Broken pipe");
+            
+            if (hasRealError) {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}:`, "red"), cleanError);
-            } else {
+              reject(new Error(`Không thể tải video (code ${code}): ${cleanError.substring(0, 100)}`));
+            } else if (code === 1) {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}`, "red"));
+              reject(new Error(`Không thể tải video (code ${code})`));
             }
-            reject(new Error(`Không thể tải video (code ${code})`));
           } catch (rejectErr) {
             reject(new Error(`Không thể tải video (code ${code})`));
           }
