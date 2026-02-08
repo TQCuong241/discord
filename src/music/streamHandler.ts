@@ -49,11 +49,13 @@ export async function createStreamResource(url: string) {
 
       proc.stderr?.on("data", (data: Buffer) => {
         const errorMsg = data.toString();
+        if (errorMsg.includes("Broken pipe")) {
+          return;
+        }
         if (errorMsg.includes("ERROR") && !errorMsg.includes("Broken pipe")) {
-          errorChunks.push(data);
-        } else if (errorMsg.includes("Broken pipe")) {
-          if (!hasResolved) {
-            console.warn(colorLog(`[Music] yt-dlp broken pipe - có thể do process exit sớm, bỏ qua lỗi này`, "yellow"));
+          const realError = errorMsg.replace(/ERROR: unable to write data: \[Errno 32\] Broken pipe/g, "").trim();
+          if (realError) {
+            errorChunks.push(data);
           }
         } else if (!errorMsg.includes("WARNING") && !errorMsg.includes("JavaScript runtime")) {
           errorChunks.push(data);
@@ -62,11 +64,19 @@ export async function createStreamResource(url: string) {
       
       proc.on("close", (code: number, signal: string) => {
         if (code !== 0 && !hasResolved) {
+          const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
+          const cleanError = errorMsg.trim();
+          const isOnlyBrokenPipe = cleanError.includes("Broken pipe") && 
+            !cleanError.replace(/ERROR: unable to write data: \[Errno 32\] Broken pipe/g, "").trim();
+          
+          if (isOnlyBrokenPipe) {
+            console.warn(colorLog(`[Music] yt-dlp exited với broken pipe, bỏ qua lỗi này`, "yellow"));
+            return;
+          }
+          
           hasResolved = true;
           cleanup();
           try {
-            const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
-            const cleanError = errorMsg.trim();
             const hasRealError = cleanError && 
               !cleanError.includes("WARNING") && 
               !cleanError.includes("JavaScript runtime") &&
@@ -75,7 +85,7 @@ export async function createStreamResource(url: string) {
             if (hasRealError) {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}:`, "red"), cleanError);
               reject(new Error(`Không thể tải video (code ${code}): ${cleanError.substring(0, 100)}`));
-            } else if (code === 1) {
+            } else {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}`, "red"));
               reject(new Error(`Không thể tải video (code ${code})`));
             }
@@ -87,11 +97,19 @@ export async function createStreamResource(url: string) {
       
       proc.on("exit", (code: number, signal: string) => {
         if (code !== 0 && !hasResolved) {
+          const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
+          const cleanError = errorMsg.trim();
+          const isOnlyBrokenPipe = cleanError.includes("Broken pipe") && 
+            cleanError.replace(/ERROR: unable to write data: \[Errno 32\] Broken pipe/g, "").replace(/WARNING:.*?JavaScript runtime.*?\n/g, "").trim() === "";
+          
+          if (isOnlyBrokenPipe || (!cleanError || cleanError.includes("Broken pipe"))) {
+            console.warn(colorLog(`[Music] yt-dlp exited với broken pipe (code ${code}), bỏ qua lỗi này`, "yellow"));
+            return;
+          }
+          
           hasResolved = true;
           cleanup();
           try {
-            const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
-            const cleanError = errorMsg.trim();
             const hasRealError = cleanError && 
               !cleanError.includes("WARNING") && 
               !cleanError.includes("JavaScript runtime") &&
@@ -100,7 +118,7 @@ export async function createStreamResource(url: string) {
             if (hasRealError) {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}:`, "red"), cleanError);
               reject(new Error(`Không thể tải video (code ${code}): ${cleanError.substring(0, 100)}`));
-            } else if (code === 1) {
+            } else {
               console.error(colorLog(`[Music] yt-dlp exited with code ${code}`, "red"));
               reject(new Error(`Không thể tải video (code ${code})`));
             }
