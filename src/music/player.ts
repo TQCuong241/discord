@@ -4,7 +4,7 @@ import {
   AudioPlayerStatus,
   VoiceConnectionStatus,
 } from "@discordjs/voice";
-import { ICON } from "../utils/icons";
+import { ICON, colorLog } from "../utils";
 import { joinVoice } from "./connectionManager";
 import { createStreamResource } from "./streamHandler";
 import {
@@ -15,9 +15,6 @@ import {
 import { createNewMusicMessage } from "./controller";
 import { QueueManager } from "./queue";
 
-/**
- * Phát nhạc trong voice channel
- */
 export async function playMusic(
   member: GuildMember,
   url: string,
@@ -29,22 +26,46 @@ export async function playMusic(
   const channel = member.voice.channel as VoiceChannel;
   if (!channel) throw new Error(`${ICON.warn} Bạn cần vào voice channel trước!`);
 
-  //  Kết nối voice channel
   const { connection, player } = await joinVoice(channel);
 
   try {
-    // Tạo stream resource từ yt-dlp hoặc local
-    const resource = await createStreamResource(url);
+    let resource: any;
+    try {
+      resource = await createStreamResource(url);
+    } catch (err: any) {
+      console.error(colorLog(`[Music] Không thể tạo stream resource:`, "red"), err);
+      throw err;
+    }
+    
     player.play(resource);
+    
+    const allConnections = QueueManager.getAllConnections(guildId);
+    const otherChannels: string[] = [];
+    
+    for (const vcConn of allConnections) {
+      if (vcConn.channelId !== channel.id) {
+        try {
+          const resourceForOther = await createStreamResource(url);
+          vcConn.player.play(resourceForOther);
+          otherChannels.push(vcConn.channelId);
+          console.log(colorLog(`[Music] Đang phát cho voice channel khác: ${vcConn.channelId}`, "cyan"));
+        } catch (err) {
+          console.error(colorLog(`[Music] Lỗi khi phát cho voice channel ${vcConn.channelId}:`, "red"), err);
+        }
+      }
+    }
+    
     const queue = QueueManager.getQueue(guildId);
     queue.currentTitle = title || url;
+    
+    if (otherChannels.length > 0) {
+      console.log(colorLog(`[Music] Đang phát cho ${allConnections.length} voice channel trong guild`, "green"));
+    }
 
-    //  Khi bắt đầu phát
     player.once(AudioPlayerStatus.Playing, async () => {
-      console.log(`${ICON.music} Bot đang phát: ${title || url}`);
+      console.log(colorLog(`[Music] Bot đang phát: ${title || url} (${allConnections.length} voice channel)`, "cyan"));
 
       try {
-        //  Tìm text channel để gửi giao diện điều khiển
         const textChannel: TextChannel =
           replyTarget?.channel ||
           member.guild.channels.cache.find(
@@ -53,20 +74,18 @@ export async function playMusic(
               (ch as TextChannel).permissionsFor(member.guild.members.me!)?.has("SendMessages")
           ) as TextChannel;
 
-        //  Nếu là auto-next → xóa message cũ có nút điều khiển
         if (isAutoNext) {
           const oldMsg = QueueManager.getControlMessage(guildId);
           if (oldMsg) {
             try {
               await oldMsg.delete().catch(() => {});
             } catch (err) {
-              console.warn(" Không thể xóa message điều khiển cũ:", err);
+              console.warn(colorLog("[Music] Không thể xóa message điều khiển cũ:", "yellow"), err);
             }
           }
         }
 
-        // Gửi message mới (hiển thị bài hiện tại)
-        if (textChannel)
+        if (textChannel && !isAutoNext)
           await createNewMusicMessage(
             textChannel,
             player,
@@ -75,23 +94,34 @@ export async function playMusic(
             title || url
           );
       } catch (err) {
-        console.error(" Không thể gửi giao diện điều khiển:", err);
+        console.error(colorLog("[Music] Không thể gửi giao diện điều khiển:", "red"), err);
       }
     });
 
-    //  Đăng ký các sự kiện player
-    handleIdleEvent(player, connection, guildId, replyTarget, member);
-    handleConnectionEvents(connection, player, guildId);
-    monitorChannelEmpty(member, player, connection, guildId, replyTarget);
+    const mainPlayer = QueueManager.getMainPlayer(guildId);
+    const isMainPlayer = !mainPlayer || mainPlayer === player;
+    
+    if (isMainPlayer) {
+      handleIdleEvent(player, connection, guildId, replyTarget, member);
+      handleConnectionEvents(connection, player, guildId);
+      monitorChannelEmpty(member, player, connection, guildId, replyTarget);
+    } else {
+      handleConnectionEvents(connection, player, guildId);
+      
+      player.on(AudioPlayerStatus.Idle, () => {});
+    }
 
-    // Đánh dấu trạng thái đang phát
     QueueManager.setPlaying(guildId, true);
 
     return { player, connection };
   } catch (err) {
-    console.error(`${ICON.error} Lỗi khi phát nhạc:`, err);
+    console.error(colorLog("[Music] Lỗi khi phát nhạc:", "red"), err);
     connection.destroy();
-    QueueManager.setPlaying(guildId, false);
+    QueueManager.removeConnection(guildId, channel.id);
+    
+    if (QueueManager.getAllConnections(guildId).length === 0) {
+      QueueManager.setPlaying(guildId, false);
+    }
     return null;
   }
 }

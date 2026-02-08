@@ -6,8 +6,29 @@ import { ICON, colorLog } from "../utils";
 
 export async function createStreamResource(url: string) {
   return new Promise<any>((resolve, reject) => {
+    let proc: any;
+    let hasResolved = false;
+    let spawnTimeout: NodeJS.Timeout | undefined;
+    const errorChunks: Buffer[] = [];
+
+    const cleanup = () => {
+      if (spawnTimeout) {
+        clearTimeout(spawnTimeout);
+        spawnTimeout = undefined;
+      }
+    };
+
+    const safeReject = (err: Error | string) => {
+      if (!hasResolved) {
+        hasResolved = true;
+        cleanup();
+        const errorMsg = typeof err === "string" ? err : err.message;
+        reject(new Error(errorMsg));
+      }
+    };
+
     try {
-      const proc = (youtubedl as any).exec(
+      proc = (youtubedl as any).exec(
         url,
         {
           output: "-",
@@ -17,45 +38,61 @@ export async function createStreamResource(url: string) {
         { stdio: ["ignore", "pipe", "pipe"] }
       );
 
-      let hasResolved = false;
-      const errorChunks: Buffer[] = [];
+      proc.on("error", (err: Error) => {
+        console.error(colorLog(`[Music] Lỗi yt-dlp process:`, "red"), err);
+        safeReject(`Không thể khởi động yt-dlp: ${err.message}`);
+      });
 
       proc.stderr?.on("data", (data: Buffer) => {
         errorChunks.push(data);
       });
-
-      let spawnTimeout: NodeJS.Timeout | undefined;
       
       proc.on("close", (code: number, signal: string) => {
         if (code !== 0 && !hasResolved) {
           hasResolved = true;
-          if (spawnTimeout) clearTimeout(spawnTimeout);
-          const errorMsg = Buffer.concat(errorChunks).toString();
-          const cleanError = errorMsg.trim();
-          if (cleanError && !cleanError.includes("WARNING") && !cleanError.includes("ERROR")) {
-            console.error(colorLog(`[Music] yt-dlp exited with code ${code}:`, "red"), cleanError);
-          } else if (cleanError) {
-            console.error(colorLog(`[Music] yt-dlp exited with code ${code}`, "red"));
+          cleanup();
+          try {
+            const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
+            const cleanError = errorMsg.trim();
+            if (cleanError && !cleanError.includes("WARNING") && !cleanError.includes("ERROR")) {
+              console.error(colorLog(`[Music] yt-dlp exited with code ${code}:`, "red"), cleanError);
+            } else {
+              console.error(colorLog(`[Music] yt-dlp exited with code ${code}`, "red"));
+            }
+            reject(new Error(`Không thể tải video (code ${code})`));
+          } catch (rejectErr) {
+            reject(new Error(`Không thể tải video (code ${code})`));
           }
-          reject(new Error(`Không thể tải video (code ${code})`));
+        }
+      });
+      
+      proc.on("exit", (code: number, signal: string) => {
+        if (code !== 0 && !hasResolved) {
+          hasResolved = true;
+          cleanup();
+          try {
+            const errorMsg = errorChunks.length > 0 ? Buffer.concat(errorChunks).toString() : "";
+            const cleanError = errorMsg.trim();
+            if (cleanError && !cleanError.includes("WARNING") && !cleanError.includes("ERROR")) {
+              console.error(colorLog(`[Music] yt-dlp exited with code ${code}:`, "red"), cleanError);
+            } else {
+              console.error(colorLog(`[Music] yt-dlp exited with code ${code}`, "red"));
+            }
+            reject(new Error(`Không thể tải video (code ${code})`));
+          } catch (rejectErr) {
+            reject(new Error(`Không thể tải video (code ${code})`));
+          }
         }
       });
 
       proc.stdout?.on("error", (err: Error) => {
-        if (!hasResolved) {
-          hasResolved = true;
-          if (spawnTimeout) clearTimeout(spawnTimeout);
-          console.error(colorLog(`[Music] Lỗi stdout stream:`, "red"), err);
-          reject(new Error(`Lỗi stream: ${err.message}`));
-        }
+        console.error(colorLog(`[Music] Lỗi stdout stream:`, "red"), err);
+        safeReject(`Lỗi stream: ${err.message}`);
       });
       
       proc.on("spawn", () => {
         if (!proc.stdout) {
-          if (!hasResolved) {
-            hasResolved = true;
-            reject(new Error(`${ICON.error} Không lấy được stream từ yt-dlp!`));
-          }
+          safeReject(`${ICON.error} Không lấy được stream từ yt-dlp!`);
           return;
         }
 
@@ -64,32 +101,26 @@ export async function createStreamResource(url: string) {
           const resource = createAudioResource(stream);
           
           stream.on("error", (err: Error) => {
-            if (!hasResolved) {
-              hasResolved = true;
-              clearTimeout(spawnTimeout);
-              console.error(colorLog(`[Music] Lỗi khi đọc stream:`, "red"), err);
-              reject(new Error(`Lỗi đọc stream: ${err.message}`));
-            }
+            console.error(colorLog(`[Music] Lỗi khi đọc stream:`, "red"), err);
+            safeReject(`Lỗi đọc stream: ${err.message}`);
           });
 
           spawnTimeout = setTimeout(() => {
             if (!hasResolved) {
               hasResolved = true;
+              cleanup();
               resolve(resource);
             }
           }, 1000);
         } catch (err: any) {
-          if (!hasResolved) {
-            hasResolved = true;
-            clearTimeout(spawnTimeout);
-            console.error(colorLog(`[Music] Lỗi khi tạo audio resource:`, "red"), err);
-            reject(new Error(`Lỗi tạo resource: ${err.message}`));
-          }
+          console.error(colorLog(`[Music] Lỗi khi tạo audio resource:`, "red"), err);
+          safeReject(`Lỗi tạo resource: ${err.message}`);
         }
       });
+
     } catch (err: any) {
       console.error(colorLog(`[Music] Lỗi khi tạo stream resource từ ${url}:`, "red"), err);
-      reject(new Error(`Không thể tải video: ${err.message || "Lỗi không xác định"}`));
+      safeReject(`Không thể tải video: ${err.message || "Lỗi không xác định"}`);
     }
   });
 }
